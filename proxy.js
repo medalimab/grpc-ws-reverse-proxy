@@ -17,7 +17,7 @@ function createGrpcClient() {
   return new chatProto.ChatService('localhost:50051', grpc.credentials.createInsecure());
 }
 
-const wss = new WebSocket.Server({ port: 8080 });
+const wss = new WebSocket.Server({ port: 8081 });
 console.log('Reverse proxy WebSocket en écoute sur ws://localhost:8080');
 
 wss.on('connection', (ws) => {
