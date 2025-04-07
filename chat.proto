@@ -36,7 +36,20 @@ message ChatStream {
   }
 }
 
+
+
+// Message pour récupérer l'historique des messages
+message GetChatHistoryRequest {
+  string room_id = 1;
+}
+
+message GetChatHistoryResponse {
+  repeated ChatMessage messages = 1;
+}
+
+// Ajout de la méthode dans le service gRPC
 service ChatService {
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
   rpc Chat(stream ChatStream) returns (stream ChatStream);
+  rpc GetChatHistory(GetChatHistoryRequest) returns (GetChatHistoryResponse);
 }

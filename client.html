@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat WebSocket</title>
+</head>
+<body>
+  <h2>Chat WebSocket</h2>
+  <input type="text" id="roomId" placeholder="ID de la salle">
+  <input type="text" id="username" placeholder="Nom d'utilisateur">
+  <input type="text" id="message" placeholder="Tapez votre message">
+  <button onclick="sendMessage()">Envoyer</button>
+  <button onclick="getHistory()">Afficher l'historique</button>
+
+  <h3>Messages :</h3>
+  <ul id="messages"></ul>
+
+  <script>
+    const ws = new WebSocket("ws://localhost:8081");
+
+    ws.onopen = () => {
+      console.log("Connexion WebSocket établie");
+    };
+
+    ws.onclose = () => {
+      console.log("Connexion WebSocket fermée");
+      alert("Connexion perdue. Recharge la page.");
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === "chat") {
+        displayMessage(data.message.sender_id, data.message.content);
+      } else if (data.type === "history") {
+        document.getElementById("messages").innerHTML = "";
+        data.messages.forEach(msg => {
+          displayMessage(msg.sender_id, msg.content);
+        });
+      }
+    };
+
+    function sendMessage() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert("WebSocket non connecté. Recharge la page.");
+        return;
+      }
+
+      const roomId = document.getElementById("roomId").value;
+      const username = document.getElementById("username").value;
+      const content = document.getElementById("message").value;
+
+      const message = {
+        type: "chat",
+        chat_message: {
+          id: "msg_" + Date.now(),
+          room_id: roomId,
+          sender_id: username,
+          content: content
+        }
+      };
+
+      ws.send(JSON.stringify(message));
+    }
+
+    function getHistory() {
+      const roomId = document.getElementById("roomId").value;
+      ws.send(JSON.stringify({ type: "history", room_id: roomId }));
+    }
+
+    function displayMessage(sender, content) {
+      const li = document.createElement("li");
+      li.textContent = `${sender}: ${content}`;
+      document.getElementById("messages").appendChild(li);
+    }
+  </script>
+</body>
+</html>

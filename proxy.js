@@ -1,9 +1,10 @@
-const grpc = require('@grpc/grpc-js');
-const protoLoader = require('@grpc/proto-loader');
-const WebSocket = require('ws');
-const path = require('path');
+const WebSocket = require("ws");
+const grpc = require("@grpc/grpc-js");
+const protoLoader = require("@grpc/proto-loader");
+const path = require("path");
 
-const PROTO_PATH = path.join(__dirname, 'chat.proto');
+const PROTO_PATH = path.join(__dirname, "chat.proto");
+
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: true,
   longs: String,
@@ -11,48 +12,74 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   defaults: true,
   oneofs: true,
 });
+
 const chatProto = grpc.loadPackageDefinition(packageDefinition).chat;
 
-function createGrpcClient() {
-  return new chatProto.ChatService('localhost:50051', grpc.credentials.createInsecure());
-}
+// Connexion au serveur gRPC
+const client = new chatProto.ChatService(
+  "localhost:50051",
+  grpc.credentials.createInsecure()
+);
 
+// Création du serveur WebSocket
 const wss = new WebSocket.Server({ port: 8081 });
-console.log('Reverse proxy WebSocket en écoute sur ws://localhost:8080');
+console.log("Reverse proxy WebSocket en écoute sur ws://localhost:8081");
 
-wss.on('connection', (ws) => {
-  console.log('Nouveau client WebSocket connecté.');
-  const grpcClient = createGrpcClient();
-  const grpcStream = grpcClient.Chat();
+// Crée un stream persistant avec le serveur gRPC
+const chatStream = client.Chat();
 
-  grpcStream.on('data', (chatStreamMessage) => {
-    console.log('Message reçu du serveur gRPC:', chatStreamMessage);
-    ws.send(JSON.stringify(chatStreamMessage));
-  });
+// Quand le serveur gRPC envoie un message via le stream
+chatStream.on("data", (data) => {
+  if (data.chat_message) {
+    // Réenvoi à tous les clients WebSocket connectés
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(
+          JSON.stringify({ type: "chat", message: data.chat_message })
+        );
+      }
+    });
+  }
+});
 
-  grpcStream.on('error', (err) => {
-    console.error('Erreur dans le stream gRPC:', err);
-    ws.send(JSON.stringify({ error: err.message }));
-  });
+chatStream.on("error", (err) => {
+  console.error("Erreur du stream gRPC:", err);
+});
 
-  grpcStream.on('end', () => {
-    console.log('Stream gRPC terminé.');
-    ws.close();
-  });
+chatStream.on("end", () => {
+  console.log("Stream gRPC terminé");
+});
 
-  ws.on('message', (message) => {
-    console.log('Message reçu du client WebSocket:', message);
+wss.on("connection", (socket) => {
+  console.log("Client WebSocket connecté");
+
+  socket.on("message", (data) => {
     try {
-      const parsed = JSON.parse(message);
-      grpcStream.write(parsed);
-    } catch (err) {
-      console.error('Erreur lors de la conversion du message JSON:', err);
-      ws.send(JSON.stringify({ error: 'Format JSON invalide' }));
-    }
-  });
+      const msg = JSON.parse(data);
 
-  ws.on('close', () => {
-    console.log('Client WebSocket déconnecté, fermeture du stream gRPC.');
-    grpcStream.end();
+      if (msg.type === "chat" && msg.chat_message) {
+        // Envoi du message dans le stream gRPC
+        chatStream.write({ chat_message: msg.chat_message });
+
+      } else if (msg.type === "history" && msg.room_id) {
+        // Requête historique via appel unary
+        client.GetChatHistory({ room_id: msg.room_id }, (err, response) => {
+          if (err) {
+            console.error("Erreur gRPC (history):", err);
+            return;
+          }
+
+          socket.send(
+            JSON.stringify({
+              type: "history",
+              messages: response.messages,
+            })
+          );
+        });
+      }
+
+    } catch (err) {
+      console.error("Erreur de parsing ou traitement:", err);
+    }
   });
 });
